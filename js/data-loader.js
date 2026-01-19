@@ -80,7 +80,7 @@ let invalidPositions = [];
  * Current block number being scanned
  * @type {number}
  */
-let currentBlockzzzz = 0;
+let currentBlockzzzz = 37667910;
 
 /**
  * Flag indicating if monitoring is running
@@ -354,7 +354,7 @@ export async function fetchDataFromUrl() {
  * @async
  * @returns {Promise<Object>} Final NFT owners and valid positions
  */
-export async function mainRPCStarterForPositions() {
+ export async function mainRPCStarterForPositions() {
     console.log("Initializing Uniswap V4 Monitor...");
 
     // Load settings first
@@ -388,31 +388,54 @@ export async function mainRPCStarterForPositions() {
     // Compare localStorage vs remote data and use whichever has higher block number
     const LOCAL_STORAGE_KEY = 'testnet_uniswap_v4_local_data';
     let loadedFromLocal = false;
-    let remoteBlock = 0;
     let localBlock = 0;
 
-    // First, fetch remote data to get its current_block
+    // Fetch both remote data sources in parallel
+    const fetchRemoteData = async (url, label) => {
+        try {
+            console.log(`Fetching ${label} data...`);
+            const response = await fetch(url);
+            if (response.ok) {
+                const data = await response.json();
+                const block = data?.metadata?.current_block || 0;
+                console.log(`${label} current_block: ${block}`);
+                return { data, block };
+            }
+        } catch (error) {
+            console.log(`Failed to fetch ${label} data:`, error);
+        }
+        return { data: null, block: 0 };
+    };
+
+    // Fetch both sources simultaneously
+    const [primary, backup] = await Promise.all([
+        fetchRemoteData(CONFIG.DATA_URL, "Primary"),
+        fetchRemoteData(CONFIG.DATA_URL_Backup, "Backup")
+    ]);
+
+    // Determine which remote source is freshest
     let remoteData = null;
-    try {
-        console.log("Fetching remote data to compare block numbers...");
-        const response = await fetch(CONFIG.DATA_URL);
-        if (response.ok) {
-            remoteData = await response.json();
-            remoteBlock = remoteData?.metadata?.current_block || 0;
-            console.log(`Remote data current_block: ${remoteBlock}`);
-        }
-    } catch (error) {
-        console.log("Failed to fetch remote data for comparison: try backup", error);
+    let remoteBlock = 0;
+    let remoteSource = null;
 
-        console.log("Fetching remote data to compare block numbers.. FROM BACKUP data source!");
-        const response2= await fetch(CONFIG.DATA_URL_Backup);
-        if (response2.ok) {
-            remoteData = await response2.json();
-            remoteBlock = remoteData?.metadata?.current_block || 0;
-            console.log(`Remote data current_block: ${remoteBlock}`);
-        }
+    if (primary.block > backup.block) {
+        remoteData = primary.data;
+        remoteBlock = primary.block;
+        remoteSource = "Primary";
+    } else if (backup.block > 0) {
+        remoteData = backup.data;
+        remoteBlock = backup.block;
+        remoteSource = "Backup";
+    } else if (primary.block > 0) {
+        remoteData = primary.data;
+        remoteBlock = primary.block;
+        remoteSource = "Primary";
+    }
 
-
+    if (remoteSource) {
+        console.log(`✓ Using ${remoteSource} remote data (block ${remoteBlock})`);
+    } else {
+        console.log("⚠ No remote data available from either source");
     }
 
     // Check localStorage data
@@ -500,7 +523,7 @@ export async function makeRpcCall(method, params) {
         id: Date.now()
     };
 
-    await sleep(CONFIG.RATE_LIMIT_DELAY || 1250);
+    await sleep(CONFIG.RATE_LIMIT_DELAY || 250);
 
     const response = await fetch(CONFIG.RPC_URL, {
         method: 'POST',
@@ -1178,7 +1201,7 @@ const CONFIG2 = {
     MODIFY_LIQUIDITY_TOPIC: "0xf208f4912782fd25c7f114ca3723a2d5dd6f3bcc3ac8db5af63baa85f711d5ec",
     MODIFY_LIQUIDITY_TOPIC2: "0xa2da1740db0db2cf3059413cc2b1ad1185d311ee69bbce1720459eea7c9e4bea",
     BLOCK_RANGE_SIZE: 1000,
-    BATCH_SIZE: 50,
+    BATCH_SIZE: 1200,
     SLEEP_BETWEEN_BATCHES: 600
 };
 
@@ -1312,9 +1335,6 @@ function processModifyLiquidityLogs(logs) {
     return positions;
 }
 
-/**
- * Batch check token ownership using the getOwnersSafe contract
- */
 async function batchCheckOwnership(provider, tokenIds, batchSize = CONFIG2.BATCH_SIZE) {
     const ownerCheckerContract = new ethers.Contract(
         CONFIG2.TOKEN_OWNER_CHECKER,
@@ -1335,35 +1355,72 @@ async function batchCheckOwnership(provider, tokenIds, batchSize = CONFIG2.BATCH
     for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
         
-        try {
-            // Convert string tokenIds to BigNumber for contract call
-            const tokenIdBigNumbers = batch.map(id => ethers.BigNumber.from(id));
-            
-            const owners = await ownerCheckerContract.getOwnersSafe(
-                CONFIG2.NFT_CONTRACT,
-                tokenIdBigNumbers
-            );
+        // Add a mandatory delay BEFORE each batch (except the first)
+        if (i > 0) {
+            const delayMs = CONFIG2.SLEEP_BETWEEN_BATCHES || 3000;
+            console.log(`  ⏳ Waiting ${delayMs}ms before batch ${i + 1}/${batches.length}...`);
+            await sleep(delayMs);
+        }
+        
+        // Retry logic with exponential backoff
+        const maxRetries = 5;
+        let retryCount = 0;
+        let success = false;
 
-            // Map tokenIds to their owners
-            for (let j = 0; j < batch.length; j++) {
-                const tokenId = batch[j];  // Keep as string for key
-                const owner = owners[j];
+        while (retryCount <= maxRetries && !success) {
+            try {
+                // Only add EXTRA delay on retries
+                if (retryCount > 0) {
+                    const backoffTime = Math.min(Math.pow(2, retryCount) * 2000, 30000);
+                    console.warn(`  ⏳ Retry ${retryCount}/${maxRetries} for batch ${i + 1}/${batches.length} after ${backoffTime}ms delay`);
+                    await sleep(backoffTime);
+                }
+
+                // Convert string tokenIds to BigNumber for contract call
+                const tokenIdBigNumbers = batch.map(id => ethers.BigNumber.from(id));
                 
-                // Check if owner is not zero address
-                if (owner !== ethers.constants.AddressZero) {
-                    allOwners[tokenId] = owner;
+                const owners = await ownerCheckerContract.getOwnersSafe(
+                    CONFIG2.NFT_CONTRACT,
+                    tokenIdBigNumbers
+                );
+
+                // Map tokenIds to their owners
+                for (let j = 0; j < batch.length; j++) {
+                    const tokenId = batch[j];
+                    const owner = owners[j];
+                    
+                    if (owner !== ethers.constants.AddressZero) {
+                        allOwners[tokenId] = owner;
+                    }
+                }
+
+                console.log(`  ✓ Batch ${i + 1}/${batches.length} completed (${batch.length} tokens)`);
+                success = true;
+                
+            } catch (error) {
+                retryCount++;
+                
+                const isRateLimit = error.message?.includes('429') || 
+                                   error.message?.includes('Too Many Requests') ||
+                                   error.code === 'NETWORK_ERROR';
+                
+                if (isRateLimit) {
+                    console.warn(`  ⚠️ Rate limited on batch ${i + 1}/${batches.length} - attempt ${retryCount}/${maxRetries}`);
+                }
+                
+                if (retryCount > maxRetries) {
+                    console.error(`  ❌ Failed batch ${i + 1}/${batches.length} after ${maxRetries} retries: ${error.message}`);
+                    break;
+                } else {
+                    if (!isRateLimit) {
+                        console.warn(`  ⚠️ Error on batch ${i + 1}: ${error.message}`);
+                    }
                 }
             }
-
-            // Sleep between batches to avoid rate limiting
-            if (i < batches.length - 1) {
-                await sleep(CONFIG2.SLEEP_BETWEEN_BATCHES);
-            }
-        } catch (error) {
-            console.error(`  Error checking ownership for batch ${i + 1}: ${error.message}`);
         }
     }
 
+    console.log(`  ✓ Ownership check complete: ${Object.keys(allOwners).length}/${tokenIds.length} tokens have owners`);
     return allOwners;
 }
 
@@ -1414,6 +1471,8 @@ async function validatePositions(provider, positionData) {
 
     return { newValidPositions, newInvalidPositions };
 }
+    var allPositionsToValidate = [];
+
 
 /**
  * Scans blocks for ModifyLiquidity events and validates positions
@@ -1430,7 +1489,7 @@ export async function scanBlocks(fromBlock, toBlock, loopNumbers) {
     const blockRanges = calculateBlockRanges(fromBlock, toBlock);
     
     // Collect all positions first before validating
-    const allPositionsToValidate = [];
+   // const allPositionsToValidate = [];  move to where scanBlocks comes from
 
     for (const { start, end } of blockRanges) {
         scanLoopCounter++;
@@ -1458,7 +1517,7 @@ export async function scanBlocks(fromBlock, toBlock, loopNumbers) {
             );
 
             console.log(` Found ${modifyLogs.length} ModifyLiquidity events`);
-            await sleep(600);
+            await sleep(100);
 
             if (modifyLogs.length === 0) {
                 continue;
@@ -1476,137 +1535,6 @@ export async function scanBlocks(fromBlock, toBlock, loopNumbers) {
         }
     }
 
-    // Merge new positions with existing positions for validation
-    console.log(`\n=== Validating All Positions (New + Existing) ===`);
-    console.log(`New positions found: ${allPositionsToValidate.length}`);
-    console.log(`Existing positions: ${validPositions.length}`);
-
-    // Create a map of all positions by tokenId (new positions will override old ones)
-    const allPositionsMap = new Map();
-
-    // Add existing positions first (with validation and field name normalization)
-    for (const existingPos of validPositions) {
-        // Normalize field names - handle both token_id and tokenId
-        const tokenId = existingPos.tokenId || existingPos.token_id;
-        
-        if (tokenId) {
-            // Normalize the position object to use camelCase and lowercase addresses
-            const normalizedPos = {
-                tokenId: tokenId.toString(),
-                poolId: existingPos.poolId || existingPos.pool_id,
-                poolKey: existingPos.poolKey || existingPos.pool_key,
-                salt: existingPos.salt,
-                sender: existingPos.sender ? existingPos.sender.toLowerCase() : existingPos.sender,
-                tickLower: existingPos.tickLower || existingPos.tick_lower,
-                tickUpper: existingPos.tickUpper || existingPos.tick_upper,
-                liquidityDelta: existingPos.liquidityDelta || existingPos.liquidity_delta,
-                owner: existingPos.owner ? existingPos.owner.toLowerCase() : existingPos.owner,
-                blockNumber: existingPos.blockNumber || existingPos.block_number,
-                txHash: existingPos.txHash || existingPos.tx_hash,
-                timestamp: existingPos.timestamp
-            };
-            allPositionsMap.set(tokenId.toString(), normalizedPos);
-        } else {
-            console.warn(`  ⚠ Skipping position with missing tokenId:`, existingPos);
-        }
-    }
-
-    // Add/update with new positions (this will update if tokenId already exists)
-    for (const newPos of allPositionsToValidate) {
-        if (newPos && newPos.tokenId) {
-            allPositionsMap.set(newPos.tokenId, newPos);
-        } else {
-            console.warn(`  ⚠ Skipping invalid new position:`, newPos);
-        }
-    }
-
-    // Convert map to array for validation
-    const allPositionsArray = Array.from(allPositionsMap.values());
-    const allTokenIds = Array.from(allPositionsMap.keys()).filter(id => id !== undefined && id !== null);
-
-    console.log(`Total unique positions to validate: ${allPositionsArray.length}`);
-    console.log(`Total unique tokenIds: ${allTokenIds.length}`);
-
-    if (allTokenIds.length > 0) {
-        // Batch check ownership for ALL positions at once
-        console.log(`  Checking ownership for ${allTokenIds.length} tokens...`);
-        const owners = await batchCheckOwnership(provider, allTokenIds);
-
-        // Reset the arrays
-        const newValidPositions = [];
-        const newInvalidPositions = [];
-        let ownershipChanges = 0;
-
-        // Process all positions
-        for (const position of allPositionsArray) {
-            if (!position || !position.tokenId) {
-                console.warn(`  ⚠ Skipping position with missing tokenId:`, position);
-                continue;
-            }
-
-            const newOwner = owners[position.tokenId];
-            const newOwnerLower = newOwner ? newOwner.toLowerCase() : null;
-            const oldOwnerLower = position.owner ? position.owner.toLowerCase() : null;
-
-            if (newOwnerLower && newOwnerLower !== ethers.constants.AddressZero.toLowerCase()) {
-                // Valid position with owner
-                if (oldOwnerLower && oldOwnerLower !== "unknown" && oldOwnerLower !== newOwnerLower) {
-                    console.log(`  ⟳ Ownership changed for token ${position.tokenId}: ${oldOwnerLower} → ${newOwnerLower}`);
-                    ownershipChanges++;
-                }
-                position.owner = newOwnerLower;
-                position.timestamp = new Date().toISOString();
-                newValidPositions.push(position);
-                console.log(`  ✓ Valid position ${position.tokenId} owned by ${newOwnerLower}`);
-            } else {
-                // Invalid position (burned or no owner)
-                console.log(`  ✗ Position ${position.tokenId} invalid (no owner or burned)`);
-                position.owner = "Unknown";
-                newInvalidPositions.push(position);
-            }
-        }
-
-        // Update global state with validated positions
-        validPositions = newValidPositions;
-        invalidPositions = newInvalidPositions;
-
-        // Rebuild nftOwners object with lowercase addresses
-        nftOwners = {};
-        for (const validPos of validPositions) {
-            if (validPos && validPos.tokenId && validPos.owner) {
-                nftOwners[validPos.tokenId] = validPos.owner.toLowerCase();
-            }
-        }
-
-        console.log(`\n  Validation complete:`);
-        console.log(`    - Total validated: ${allPositionsArray.length}`);
-        console.log(`    - Valid positions: ${newValidPositions.length}`);
-        console.log(`    - Invalid positions: ${newInvalidPositions.length}`);
-        console.log(`    - Ownership changes detected: ${ownershipChanges}`);
-    } else {
-        console.log(`  No valid tokenIds to validate`);
-    }
-
-    // Save data locally if function is available
-    if (typeof saveDataLocally === 'function') {
-        const storageKey = 'testnet_uniswap_v4_local_data';
-        saveDataLocally(storageKey, {
-            metadata: {
-                last_updated: new Date().toISOString(),
-                current_block: currentBlockzzzz,
-                total_valid_positions: validPositions.length,
-                total_nft_owners: Object.keys(nftOwners).length
-            },
-            valid_positions: validPositions,
-            invalid_positions: invalidPositions,
-            nft_owners: nftOwners
-        });
-    }
-
-    console.log(`\n=== Scan Complete ===`);
-    console.log(`Total valid positions: ${validPositions.length}`);
-    console.log(`Total invalid positions: ${invalidPositions.length}`);
-    console.log(`Total NFT owners: ${Object.keys(nftOwners).length}`);
 }
 
 
@@ -1717,6 +1645,193 @@ export async function runOnce(blocksPerScan = 1000) {
     return latestBlock;
 }
 
+
+
+async function finishBlocksRun(){
+
+    const provider = new ethers.providers.JsonRpcProvider(CONFIG2.RPC_URL);
+
+    
+    // Merge new positions with existing positions for validation
+    console.log(`\n=== Validating All Positions (New + Existing) ===`);
+    console.log(`New positions found: ${allPositionsToValidate.length}`);
+    console.log(`Existing positions: ${validPositions.length}`);
+
+    // Create a map of all positions by tokenId (new positions will override old ones)
+    const allPositionsMap = new Map();
+
+    // Add existing positions first (with validation and field name normalization)
+    for (const existingPos of validPositions) {
+        // Normalize field names - handle both token_id and tokenId
+        const tokenId = existingPos.tokenId || existingPos.token_id;
+        
+        if (tokenId) {
+            // Normalize the position object to use camelCase and lowercase addresses
+            const normalizedPos = {
+                tokenId: tokenId.toString(),
+                poolId: existingPos.poolId || existingPos.pool_id,
+                poolKey: existingPos.poolKey || existingPos.pool_key,
+                salt: existingPos.salt,
+                sender: existingPos.sender ? existingPos.sender.toLowerCase() : existingPos.sender,
+                tickLower: existingPos.tickLower || existingPos.tick_lower,
+                tickUpper: existingPos.tickUpper || existingPos.tick_upper,
+                liquidityDelta: existingPos.liquidityDelta || existingPos.liquidity_delta,
+                owner: existingPos.owner ? existingPos.owner.toLowerCase() : existingPos.owner,
+                blockNumber: existingPos.blockNumber || existingPos.block_number,
+                txHash: existingPos.txHash || existingPos.tx_hash,
+                timestamp: existingPos.timestamp
+            };
+            allPositionsMap.set(tokenId.toString(), normalizedPos);
+        } else {
+            console.warn(`  ⚠ Skipping position with missing tokenId:`, existingPos);
+        }
+    }
+
+    // Add/update with new positions (this will update if tokenId already exists)
+    for (const newPos of allPositionsToValidate) {
+        if (newPos && newPos.tokenId) {
+            allPositionsMap.set(newPos.tokenId, newPos);
+        } else {
+            console.warn(`  ⚠ Skipping invalid new position:`, newPos);
+        }
+    }
+
+    // Convert map to array for validation
+    const allPositionsArray = Array.from(allPositionsMap.values());
+    const allTokenIds = Array.from(allPositionsMap.keys()).filter(id => id !== undefined && id !== null);
+
+    console.log(`Total unique positions to validate: ${allPositionsArray.length}`);
+    console.log(`Total unique tokenIds: ${allTokenIds.length}`);
+
+    if (allTokenIds.length > 0) {
+        // Batch check ownership for ALL positions at once
+        console.log(`  Checking ownership for ${allTokenIds.length} tokens...`);
+        await sleep(500);
+        const owners = await batchCheckOwnership(provider, allTokenIds);
+
+        // Reset the arrays
+        const newValidPositions = [];
+        const newInvalidPositions = [];
+        let ownershipChanges = 0;
+
+        // Process all positions
+        for (const position of allPositionsArray) {
+            if (!position || !position.tokenId) {
+                console.warn(`  ⚠ Skipping position with missing tokenId:`, position);
+                continue;
+            }
+
+            const newOwner = owners[position.tokenId];
+            const newOwnerLower = newOwner ? newOwner.toLowerCase() : null;
+            const oldOwnerLower = position.owner ? position.owner.toLowerCase() : null;
+
+            if (newOwnerLower && newOwnerLower !== ethers.constants.AddressZero.toLowerCase()) {
+                // Valid position with owner
+                if (oldOwnerLower && oldOwnerLower !== "unknown" && oldOwnerLower !== newOwnerLower) {
+                    console.log(`  ⟳ Ownership changed for token ${position.tokenId}: ${oldOwnerLower} → ${newOwnerLower}`);
+                    ownershipChanges++;
+                }
+                position.owner = newOwnerLower;
+                position.timestamp = new Date().toISOString();
+                newValidPositions.push(position);
+                console.log(`  ✓ Valid position ${position.tokenId} owned by ${newOwnerLower}`);
+            } else {
+                // Invalid position (burned or no owner)
+                console.log(`  ✗ Position ${position.tokenId} invalid (no owner or burned)`);
+                position.owner = "Unknown";
+                newInvalidPositions.push(position);
+            }
+        }
+
+        // Update global state with validated positions
+        validPositions = newValidPositions;
+        invalidPositions = newInvalidPositions;
+
+        // Rebuild nftOwners object with lowercase addresses
+        nftOwners = {};
+        for (const validPos of validPositions) {
+            if (validPos && validPos.tokenId && validPos.owner) {
+                nftOwners[validPos.tokenId] = validPos.owner.toLowerCase();
+            }
+        }
+
+        console.log(`\n  Validation complete:`);
+        console.log(`    - Total validated: ${allPositionsArray.length}`);
+        console.log(`    - Valid positions: ${newValidPositions.length}`);
+        console.log(`    - Invalid positions: ${newInvalidPositions.length}`);
+        console.log(`    - Ownership changes detected: ${ownershipChanges}`);
+    } else {
+        console.log(`  No valid tokenIds to validate`);
+    }
+
+    // Save data locally if function is available
+    if (typeof saveDataLocally === 'function') {
+        const storageKey = 'testnet_uniswap_v4_local_data';
+        saveDataLocally(storageKey, {
+            metadata: {
+                last_updated: new Date().toISOString(),
+                current_block: currentBlockzzzz,
+                total_valid_positions: validPositions.length,
+                total_nft_owners: Object.keys(nftOwners).length
+            },
+            valid_positions: validPositions,
+            invalid_positions: invalidPositions,
+            nft_owners: nftOwners
+        });
+    }
+
+    console.log(`\n=== Scan Complete ===`);
+    console.log(`Total valid positions: ${validPositions.length}`);
+    console.log(`Total invalid positions: ${invalidPositions.length}`);
+    console.log(`Total NFT owners: ${Object.keys(nftOwners).length}`);
+
+
+                        allPositionsToValidate = [];
+                        // VERY IMPORTANT ABOVE NEEDS RESET TO FIND NEW allPositionstoValidate!
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * 
+ * 
+ * Runs continuous monitoring
+ * @async
+ * @param {number} blocksPerScan - Maximum blocks to scan per cycle
+ * @param {number} sleepSeconds - Seconds to wait between scans
+ * @returns {Promise<void>}
+ */
 /**
  * Runs continuous monitoring
  * @async
@@ -1744,6 +1859,7 @@ export async function runContinuous(blocksPerScan = 1000, sleepSeconds = 10) {
         WeAreSearchingLogsRightNow = true;
 
         try {
+            // Fetch latest block ONCE at the start of each scan cycle
             const latestBlock = await getLatestBlock();
             const numOfLoops = Math.ceil((latestBlock - currentBlockzzzz) / 499);
 
@@ -1753,29 +1869,46 @@ export async function runContinuous(blocksPerScan = 1000, sleepSeconds = 10) {
             if (typeof setLoadingProgress === 'function') {
                 setLoadingProgress(0);
             }
-
+            var loopCount = 0;
+            var adjustmentNeeded = 0;
+            
             if (currentBlockzzzz <= latestBlock) {
                 // Reset loop counter at start of fresh scan session
                 scanLoopCounter = 0;
                 const remainingBlocks = latestBlock - currentBlockzzzz + 1;
                 console.log(`\n${remainingBlocks} blocks behind latest (${currentBlockzzzz} → ${latestBlock})`);
 
+                // Use the cached latestBlock for the entire scan
                 while (currentBlockzzzz <= latestBlock && isRunning) {
-                    const currentLatest = await getLatestBlock();
-                    const blocksToScan = Math.min(blocksPerScan, currentLatest - currentBlockzzzz + 1);
+                    const blocksToScan = Math.min(blocksPerScan, latestBlock - currentBlockzzzz + 1);
                     const toBlock = currentBlockzzzz + blocksToScan - 1;
+                    adjustmentNeeded = (blocksToScan + 1) / (latestBlock - currentBlockzzzz);
 
                     if (blocksToScan > 0) {
                         console.log(`Scanning blocks ${currentBlockzzzz} to ${toBlock} (${blocksToScan} blocks)`);
                         await scanBlocks(currentBlockzzzz, toBlock, numOfLoops);
                         currentBlockzzzz = toBlock + 1;
 
-                        if (currentBlockzzzz <= currentLatest && isRunning) {
-                            await sleep(2000);
+                        if (currentBlockzzzz <= latestBlock && isRunning) {
+                            await sleep(250);
                         }
                     } else {
                         break;
                     }
+                    
+                    if (loopCount % 20 == 0 &&  remainingBlocks > blocksPerScan*6) {
+                        console.log("Running 1 in 20 finishBlocksRun to save and finalize data for us");
+                        
+                        await finishBlocksRun();
+
+                    }
+                    loopCount = loopCount + 1;
+                }
+
+                try {
+                    await finishBlocksRun();
+                } catch (error) {
+                    console.warn("finishBlocksRun error after loop?");
                 }
 
                 printSummary();

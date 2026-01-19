@@ -1664,7 +1664,7 @@ export function updateStakingValues(stakedAmounts, apy) {
         var tokenAddresses1;
         tokenAddresses1 = JSON.parse(rawString);
     } catch (error) {
-        console.error("Still can't parse:", error);
+        console.log("Still can't parse (not big deal): ", error);
         tokenAddresses1 = rawString;
     }
 
