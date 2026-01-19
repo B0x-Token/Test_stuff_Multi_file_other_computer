@@ -484,14 +484,13 @@ export async function switchTab(tabName) {
     if (!window.walletConnected) {
         console.log("Wallet not connected");
     }else{
-        if(tabName != 'convert' && tabName != "settings" && tabName != "contract-info" && tabName != "whitepaper" && tabName != "miner");{
+        if(tabName != 'convert' && tabName != "settings" && tabName != "contract-info" && tabName != "whitepaper" && tabName != "miner"){
 
             await switchToBase();
         }
 
         // Preload position data in background for any tab (with cache check)
         if (!window.positionsLoaded && typeof window.getTokenIDsOwnedByMetamask === 'function') {
-            window.positionsLoaded = true;
             window.positionsLoadPromise = window.getTokenIDsOwnedByMetamask().then(() => {
                 if (typeof window.loadPositionsIntoDappSelections === 'function') {
                     return window.loadPositionsIntoDappSelections();
@@ -500,6 +499,8 @@ export async function switchTab(tabName) {
                 console.warn('Failed to preload positions:', e);
                 window.positionsLoaded = false; // Allow retry on failure
             });
+            
+            window.positionsLoaded = true;
         }
     }
 
