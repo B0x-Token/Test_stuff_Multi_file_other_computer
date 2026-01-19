@@ -489,7 +489,7 @@ export async function connectWallet(resumeFromStep = null) {
         }
 
         // Get token IDs (needs position data from runContinuous)
-        if (window.getTokenIDsOwnedByMetamask && !window.positionsLoaded) {
+        if (window.getTokenIDsOwnedByMetamask) {
             try {
                 
                     console.log("SwitchTab position Loaded2");
