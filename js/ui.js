@@ -490,19 +490,18 @@ export async function switchTab(tabName) {
             await switchToBase();
         }
 
-        // Preload position data in background for any tab (with cache check)
-        if (!window.positionsLoaded && typeof window.getTokenIDsOwnedByMetamask === 'function') {
-            window.positionsLoadPromise = window.getTokenIDsOwnedByMetamask().then(() => {
-                if (typeof window.loadPositionsIntoDappSelections === 'function') {
-                    return window.loadPositionsIntoDappSelections();
+                    // Preload position data in background for any tab (with cache check)
+            if (!window.positionsLoaded && typeof window.getTokenIDsOwnedByMetamask === 'function') {
+                try {
+                    await window.getTokenIDsOwnedByMetamask();
+                    console.log("SwitchTab position Loaded");
+                    window.positionsLoaded = true;
+                } catch (e) {
+                    console.warn('Failed to preload positions:', e);
+                    window.positionsLoaded = false; // Allow retry on failure
                 }
-            }).catch(e => {
-                console.warn('Failed to preload positions:', e);
-                window.positionsLoaded = false; // Allow retry on failure
-            });
-            
-            window.positionsLoaded = true;
-        }
+            }
+                    
     }
 
     // Hide all pages
