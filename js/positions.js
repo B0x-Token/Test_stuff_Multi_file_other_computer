@@ -537,6 +537,7 @@ async function getTokenIDsOwnedByUser(ADDRESSTOSEARCHOF) {
 
     if (!window.walletConnected) {
         await window.connectWallet();
+        return;
     }
 
     // Multicall3 ABI for batching calls
@@ -923,7 +924,6 @@ async function getTokenIDsOwnedByUser(ADDRESSTOSEARCHOF) {
         }
     }
 
-    await loadPositionsIntoDappSelections();
 
     // ============================================
     // PROCESS UNSTAKED POSITIONS
