@@ -508,7 +508,8 @@ export async function getTokenIDsOwnedByMetamask(forceRefresh = false) {
 
     // Skip if cache is valid and same address (unless forced)
     if (!forceRefresh && sameAddress && cacheValid && Object.keys(positionData).length >= 0) {
-        console.log("Using cached position data (last fetch:", Math.round((now - lastPositionFetchTime) / 1000), "seconds ago)");
+        console.log("Using cached position data (last fetch:", Math.round((now - lastPositionFetchTime) / 1000), "seconds ago)");+
+        await loadPositionsIntoDappSelections();
         return;
     }
 
