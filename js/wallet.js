@@ -61,30 +61,62 @@ let connectionState = {
  */
 let isConnecting = false;
 
+
+
+
 /**
- * Wait for wallet extension to be fully ready
+ * Wait for wallet to be injected AND ready
  * @param {number} maxWaitMs - Maximum time to wait
  * @returns {Promise<boolean>} True if wallet is ready
  */
 async function waitForWalletReady(maxWaitMs = 5000) {
     const startTime = Date.now();
+    let walletDetected = false;
 
-    while (Date.now() - startTime < maxWaitMs) {
+    // Listen for ethereum#initialized event (Rabby mobile)
+    const initPromise = new Promise((resolve) => {
         if (window.ethereum) {
-            try {
-                // Try a simple call to see if wallet responds
-                const result = await Promise.race([
-                    window.ethereum.request({ method: 'eth_chainId' }),
-                    new Promise((_, reject) => setTimeout(() => reject(), 500))
-                ]);
-                if (result) return true;
-            } catch (e) {
-                // Not ready yet, wait and retry
-            }
+            walletDetected = true;
+            resolve(true);
+            return;
         }
-        await new Promise(r => setTimeout(r, 300));
-    }
-    return false;
+        
+        const handler = () => {
+            walletDetected = true;
+            resolve(true);
+        };
+        window.addEventListener('ethereum#initialized', handler, { once: true });
+        
+        setTimeout(() => {
+            window.removeEventListener('ethereum#initialized', handler);
+            resolve(false);
+        }, maxWaitMs);
+    });
+
+    // Poll for wallet injection (fallback)
+    const pollPromise = (async () => {
+        while (Date.now() - startTime < maxWaitMs) {
+            if (window.ethereum && !walletDetected) {
+                walletDetected = true;
+                
+                // Verify wallet responds
+                try {
+                    await Promise.race([
+                        window.ethereum.request({ method: 'eth_chainId' }),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 500))
+                    ]);
+                    return true;
+                } catch (e) {
+                    // Not ready yet, continue polling
+                }
+            }
+            await new Promise(r => setTimeout(r, 200));
+        }
+        return false;
+    })();
+
+    // Return true if either method succeeds
+    return Promise.race([initPromise, pollPromise]);
 }
 
 // ============================================================================
@@ -358,17 +390,12 @@ export async function connectWallet(resumeFromStep = null) {
         return null;
     }
 
-    if (typeof window.ethereum === 'undefined') {
-        alert('Please install MetaMask or Rabby wallet!');
-        return null;
-    }
-
     // Set connection lock
     isConnecting = true;
 
     // Wait for wallet extension to be fully ready (handles fresh Chrome instances)
     console.log('Waiting for wallet to be ready...');
-    const walletReady = await waitForWalletReady(3000);
+    const walletReady = await waitForWalletReady(5000);
     if (!walletReady) {
         // Wallet not responding - auto-refresh since that fixes it
         console.log('Wallet not ready - refreshing page...');
