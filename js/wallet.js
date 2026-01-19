@@ -492,6 +492,7 @@ export async function connectWallet(resumeFromStep = null) {
         if (window.getTokenIDsOwnedByMetamask) {
             try {
                 await withNetworkRetry(() => window.getTokenIDsOwnedByMetamask(), 2, 'getTokenIDs');
+                window.positionsLoaded = true;
             } catch (e) {
                 console.warn('getTokenIDs error:', e);
             }
