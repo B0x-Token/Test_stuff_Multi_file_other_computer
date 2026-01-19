@@ -475,6 +475,7 @@ let statsDataLoadedAt = 0; // Timestamp of last stats load
  * @param {string} tabName - Name of tab to switch to
  */
 export async function switchTab(tabName) {
+    console.log("called switchTab: ", tabName);
     // Store previous tab and update immediately to prevent race conditions
     const previousTab = PreviousTabName;
     PreviousTabName = tabName;
