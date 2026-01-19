@@ -512,12 +512,12 @@ export async function loadMoreBlocks() {
     }
      console.log('📥 User requested to load ALL remaining blocks...');
     
-    // Update button state
+    /* Update button state
     const loadMoreBtn = document.getElementById('blocks-load-more-btn');
     if (loadMoreBtn) {
         loadMoreBtn.disabled = true;
         loadMoreBtn.textContent = 'Loading All Blocks...';
-    }
+    }*/
     
         var provids = window.walletConnected ? window.provider : window.providerTempStats;
         if (!provids) {
@@ -529,15 +529,22 @@ export async function loadMoreBlocks() {
         const blockNumber = window.cachedContractStats?.blockNumber || null;
         const lastBaseBlock = window.cachedContractStats?.latestDiffPeriod || null;
         
-        // Call with forceLoadMore = true to bypass the limit and load ALL blocks
+        /* Call with forceLoadMore = true to bypass the limit and load ALL blocks only if there is blocks left to get 
+        // and we are in offline mode aka maybe add a variable at the consol.warn to track if both sources failed and we are using BackswardsOffline otherwise dont call updateAllMinerInfoBackwardsOfflineServer again.
+
+        console.warn('❌ Both primary and backup sources failed! Using reverse updateAllMinerInfoBackwardsOfflineServer function');
+        
+        , otherwise dont call this
          updateAllMinerInfoBackwardsOfflineServer(
             provider,
             blockNumber,
             lastBaseBlock,
             true  // This will load ALL remaining blocks without the 3200 limit
         );
+        */
+    }
         
-}
+
 
 // ============================================
 // MAIN MINING INFO FUNCTIONS
