@@ -376,7 +376,7 @@ function renderBlocksBatch(startIndex, count, append = false) {
         return;
     }
 
-    const { get_date_from_eth_block, known_miners, _BLOCK_EXPLORER_TX_URL, _BLOCK_EXPLORER_BLOCK_URL } = blockRenderContext;
+    const { get_relative_time_from_eth_block, known_miners, _BLOCK_EXPLORER_TX_URL, _BLOCK_EXPLORER_BLOCK_URL } = blockRenderContext;
 
     const endIndex = Math.min(startIndex + count, allMinedBlocks.length);
     let innerhtml_buffer = '';
@@ -440,20 +440,20 @@ function renderBlocksBatch(startIndex, count, append = false) {
             // Add the new period row with placeholder for next update
             if (eth_block > 36415630) {
                 innerhtml_buffer += '<tr><td id="statsTime"">'
-                    + get_date_from_eth_block(eth_block) + '</td><td>'
+                    + get_relative_time_from_eth_block(eth_block) + '</td><td>'
                     + '<b>New difficulty period</b>' + '</td><td>'
                     + '<b>New Challenge</b>'
                     + '</td><td><b> Previous Period had</b></td><td class="stat-value"><b>PeriodNumberperiod Mints</b></td></tr>';
             } else {
                 innerhtml_buffer += '<tr><td id="statsTime">'
-                    + get_date_from_eth_block(eth_block) + '</td><td>'
+                    + get_relative_time_from_eth_block(eth_block) + '</td><td>'
                     + '<b>New difficulty period</b>' + '</td><td>'
                     + '<b>New Challenge</b>'
                     + '</td><td><b> Previous Period had</b></td><td class="stat-value"><b>2016 Mints</b></td></tr>';
             }
         } else {
             innerhtml_buffer += '<tr><td id="statsTime">'
-                + get_date_from_eth_block(eth_block) + '</td><td class="hash2">'
+                + get_relative_time_from_eth_block(eth_block) + '</td><td class="hash2">'
                 + '<a href="' + block_url + '" target="_blank">' + eth_block + '</a></td><td class="hash">'
                 + '<a href="' + transaction_url + '" title="' + tx_hash + '" target="_blank">'
                 + tx_hash.substr(0, 16) + '...</a></td><td align="right" style="text-overflow:ellipsis;white-space: nowrap;overflow: hidden;">'
@@ -506,10 +506,37 @@ function updateBlocksPaginationUI() {
 /**
  * Handler for "Load More" button click
  */
-export function loadMoreBlocks() {
+export async function loadMoreBlocks() {
     if (currentlyDisplayedBlocks < allMinedBlocks.length) {
         renderBlocksBatch(currentlyDisplayedBlocks, BLOCKS_PER_PAGE, true);
     }
+     console.log('📥 User requested to load ALL remaining blocks...');
+    
+    // Update button state
+    const loadMoreBtn = document.getElementById('blocks-load-more-btn');
+    if (loadMoreBtn) {
+        loadMoreBtn.disabled = true;
+        loadMoreBtn.textContent = 'Loading All Blocks...';
+    }
+    
+        var provids = window.walletConnected ? window.provider : window.providerTempStats;
+        if (!provids) {
+            provids = new ethers.providers.JsonRpcProvider(customRPC);
+        }
+
+        // Get the necessary parameters from cached stats
+        const provider = provids;
+        const blockNumber = window.cachedContractStats?.blockNumber || null;
+        const lastBaseBlock = window.cachedContractStats?.latestDiffPeriod || null;
+        
+        // Call with forceLoadMore = true to bypass the limit and load ALL blocks
+         updateAllMinerInfoBackwardsOfflineServer(
+            provider,
+            blockNumber,
+            lastBaseBlock,
+            true  // This will load ALL remaining blocks without the 3200 limit
+        );
+        
 }
 
 // ============================================
@@ -730,6 +757,7 @@ export async function updateAllMinerInfo(providerParam, blockNumberParam = null,
         // Both failed
         console.warn('❌ Both primary and backup sources failed! Using reverse updateAllMinerInfoBackwardsOfflineServer function');
         await updateAllMinerInfoBackwardsOfflineServer(providerParam, blockNumberParam, lastBaseBlock);
+        console.log("DONEZONE?");
         return;
        // throw new Error('All data sources unavailable');
     }
@@ -1540,34 +1568,7 @@ let epchCount;
     var date_now = new Date();
     var date_of_last_mint = new Date(date_now.getTime() - blocks_since_last_reward * _SECONDS_PER_ETH_BLOCK * 1000)
 
-    function get_date_from_eth_block(eth_block) {
-        const blockTime = new Date(
-            date_of_last_mint.getTime() - ((last_reward_eth_block - eth_block) * _SECONDS_PER_ETH_BLOCK * 1000)
-        );
 
-        const now = new Date();
-        const diffMs = now - blockTime;
-        const diffSec = Math.floor(diffMs / 1000);
-        const diffMin = Math.floor(diffSec / 60);
-        const diffHr = Math.floor(diffMin / 60);
-        const diffDay = Math.floor(diffHr / 24);
-        const diffYr = Math.floor(diffDay / 365);
-
-        let result;
-        if (diffYr >= 1) {
-            result = diffYr === 1 ? "1 year ago" : `${diffYr} years ago`;
-        } else if (diffDay >= 1) {
-            result = diffDay === 1 ? "1 day ago" : `${diffDay} days ago`;
-        } else if (diffHr >= 1) {
-            result = diffHr === 1 ? "1 hr ago" : `${diffHr} hrs ago`;
-        } else if (diffMin >= 1) {
-            result = diffMin === 1 ? "1 min ago" : `${diffMin} mins ago`;
-        } else {
-            result = "just now";
-        }
-
-        return result;
-    }
 
     // Store blocks for pagination
     allMinedBlocks = mined_blocks;
@@ -1575,7 +1576,7 @@ let epchCount;
 
     // Store context needed for rendering
     blockRenderContext = {
-        get_date_from_eth_block,
+        get_relative_time_from_eth_block,
         known_miners,
         _BLOCK_EXPLORER_TX_URL,
         _BLOCK_EXPLORER_BLOCK_URL
@@ -1638,24 +1639,539 @@ let epchCount;
 // esp epochCount and previousEpochCount it needs to use the correct new order and still get the corret epochs per mint please
 
 
+function renderMinerStatsFromMinedBlocks({
+    mined_blocks,
+    last_difficulty_start_block,
+    estimated_network_hashrate,
+    current_eth_block
+}) {
+    console.log("🎨 Rendering miner stats from mined_blocks");
+
+    /* =========================
+       RESET ALL STATE
+    ========================== */
+
+    let totalZKBTC_Mined = {};
+    let totalZKBTC_Mined_HASH = {};
+    let miner_block_count = {};
+    let miner_block_count2 = {};
+    let miner_block_countHASH = {};
+    let total_mint_count_HASH = {};
+    let total_TOTAL_mint_count_HASH = 0;
+
+    let total_block_count = 0;
+    let total_tx_count = 0;
+    let totalZKTC_Calculated = 0;
+
+    let previousEpoch = null;
+
+    /* =========================
+       AGGREGATE FROM mined_blocks
+       (direction-agnostic)
+    ========================== */
+
+    for (let i = 0; i < mined_blocks.length; i++) {
+        const [ethBlock, txHash, miner, amount, epoch] = mined_blocks[i];
+
+        if (amount === -1) {
+            previousEpoch = epoch;
+            continue;
+        }
+
+        let epochsMined;
+        if (previousEpoch === null) {
+            epochsMined = epoch;
+        } else {
+            epochsMined = Math.abs(epoch - previousEpoch);
+            if (epochsMined <= 0) epochsMined = 1;
+        }
+
+        previousEpoch = epoch;
+
+        if (ethBlock > last_difficulty_start_block) {
+            miner_block_countHASH[miner] =
+                (miner_block_countHASH[miner] || 0) + amount;
+
+            total_mint_count_HASH[miner] =
+                (total_mint_count_HASH[miner] || 0) + 1;
+
+            totalZKBTC_Mined_HASH[miner] =
+                (totalZKBTC_Mined_HASH[miner] || 0) + epochsMined;
+
+            total_TOTAL_mint_count_HASH += epochsMined;
+        }
+
+        miner_block_count[miner] =
+            (miner_block_count[miner] || 0) + epochsMined;
+
+        miner_block_count2[miner] =
+            (miner_block_count2[miner] || 0) + 1;
+
+        totalZKBTC_Mined[miner] =
+            (totalZKBTC_Mined[miner] || 0) + amount;
+
+        totalZKTC_Calculated += amount;
+        total_block_count += epochsMined;
+        total_tx_count++;
+    }
+
+    /* =========================
+       ===== RECENT MINERS =====
+    ========================== */
+
+    let sorted_recent = [];
+    for (let m in miner_block_countHASH) {
+        sorted_recent.push([
+            m,
+            totalZKBTC_Mined_HASH[m],
+            miner_block_countHASH[m],
+            total_mint_count_HASH[m]
+        ]);
+    }
+
+    sorted_recent.sort((a, b) => b[1] - a[1]);
+
+    let html2 =
+        '<tr><th style="font-size:1.75em">Miner</th>' +
+        '<th>Recent Epochs</th><th>%</th>' +
+        '<th>Hashrate</th><th>Tx</th><th>B0x</th></tr>';
+
+    let pie2 = { data: [], backgroundColor: [], label: 'recent' };
+    let pieLabels2 = [];
+
+    sorted_recent.forEach(m => {
+        const percent = m[1] / total_TOTAL_mint_count_HASH;
+
+        pie2.data.push(m[1]);
+        pie2.backgroundColor.push(getMinerColor(m[0], known_miners));
+        pieLabels2.push(getMinerName(m[0], known_miners));
+
+        html2 += `
+        <tr>
+            <td>${getMinerNameLinkHTML(m[0], known_miners)}</td>
+            <td>${m[1]}</td>
+            <td>${(percent * 100).toFixed(2)}%</td>
+            <td>${convertHashRateToReadable2(percent * estimated_network_hashrate)}</td>
+            <td>${m[3]}</td>
+            <td>${m[2].toFixed(0)} B0x</td>
+        </tr>`;
+    });
+
+    document.querySelector('#minerstats2').innerHTML = html2;
+    document.querySelector('#row-miners2').style.display = 'block';
+    showBlockDistributionPieChart2(pie2, pieLabels2);
+
+    /* =========================
+       ===== ALL MINERS =====
+    ========================== */
+
+    let sorted_all = [];
+    for (let m in miner_block_count) {
+        sorted_all.push([
+            m,
+            miner_block_count[m],
+            totalZKBTC_Mined[m],
+            miner_block_count2[m]
+        ]);
+    }
+
+    sorted_all.sort((a, b) => b[1] - a[1]);
+
+    let html =
+        '<tr><th style="font-size:1.75em">Miner</th>' +
+        '<th>Epochs</th><th>%</th>' +
+        '<th>Tx</th><th>B0x</th></tr>';
+
+    let pie = { data: [], backgroundColor: [], label: 'all' };
+    let pieLabels = [];
+
+    sorted_all.forEach(m => {
+        const percent = m[1] / total_block_count;
+
+        pie.data.push(m[1]);
+        pie.backgroundColor.push(getMinerColor(m[0], known_miners));
+        pieLabels.push(getMinerName(m[0], known_miners));
+
+        html += `
+        <tr>
+            <td>${getMinerNameLinkHTML(m[0], known_miners)}</td>
+            <td>${m[1]}</td>
+            <td>${(percent * 100).toFixed(2)}%</td>
+            <td>${m[3]}</td>
+            <td>${m[2].toFixed(0)} B0x</td>
+        </tr>`;
+    });
+
+    document.querySelector('#minerstats').innerHTML = html;
+    document.querySelector('#row-miners').style.display = 'block';
+
+    showBlockDistributionPieChart(pie, pieLabels);
+
+    /* =========================
+       ===== BLOCK TABLE =====
+    ========================== */
+
+    allMinedBlocks = mined_blocks;
+    currentlyDisplayedBlocks = 0;
+
+    blockRenderContext = {
+        get_relative_time_from_eth_block,
+        known_miners,
+        _BLOCK_EXPLORER_TX_URL,
+        _BLOCK_EXPLORER_BLOCK_URL
+    };
+
+    document.querySelector('#row-blocks').style.display = 'block';
+    document.querySelector('#blockstats').style.display = 'block';
+
+    renderBlocksBatch(0, BLOCKS_PER_PAGE, false);
+
+    console.log("✅ Rendering complete");
+}
+
+
+
+
 /**
  * Backwards mining information update function
  * Scans from newest block to oldest, processing all mined blocks in reverse
  * @param {Object} providerParam - Ethers.js provider
  * @param {number} blockNumberParam - Optional block number from multicall
  * @param {number} lastBaseBlock - Last difficulty adjustment block
- */
+ 
 export async function updateAllMinerInfoBackwardsOfflineServer(providerParam, blockNumberParam = null, lastBaseBlock = null){
     console.warn("updateAllMinerInfoBackwardsOfflineServer needs implementing")
+}
+*/
+
+
+
+const MAX_MINTS_INITIAL_LOAD = 3200;
+const LAST_OLDEST_BLOCK_KEY = 'lastOldestMintBlock_EraBitcoin2_afbRAFFABC_B0x1';
+
+
+export async function updateAllMinerInfoBackwardsOfflineServer(
+    providerParam,
+    blockNumberParam = null,
+    lastBaseBlock = null,
+    forceLoadMore = false
+) {
+    console.log('🔄 updateAllMinerInfoBackwardsOfflineServer');
+
+    const provider = providerParam;
+
+    let current_eth_block;
+    if (blockNumberParam !== null) {
+        current_eth_block = blockNumberParam - 2;
+    } else {
+        current_eth_block = (await provider.getBlockNumber()) - 2;
+    }
+
+    const last_difficulty_start_block = lastBaseBlock;
+    const estimated_network_hashrate = typeof estHashrate !== 'undefined' ? estHashrate : 0;
+
+    /* =========================
+       LOAD LOCAL STATE
+    ========================== */
+
+    let mined_blocks = [];
+    let previousChallenge = null;
+    let previousEpochCount = null;
+
+    let lastOldestScannedBlock =
+        Number(localStorage.getItem(LAST_OLDEST_BLOCK_KEY)) || current_eth_block;
+
+    try {
+        const mintData = localStorage.getItem('mintData_EraBitcoin2_afbRAFFABC_B0x1');
+        if (mintData) {
+            mined_blocks = JSON.parse(mintData);
+            if (mined_blocks.length > 0) {
+                previousEpochCount = mined_blocks[mined_blocks.length - 1][4];
+            }
+        }
+
+        const chal = localStorage.getItem('mintData_GreekWedding2_B0x1');
+        if (chal) previousChallenge = JSON.parse(chal);
+
+    } catch (e) {
+        console.warn('⚠️ Failed loading local data:', e);
+        mined_blocks = [];
+        previousEpochCount = null;
+    }
+
+    /* =========================
+       CHECK MINT LIMIT
+    ========================== */
+
+    // Count actual mints (exclude challenge markers with amount === -1)
+    const actualMintCount = mined_blocks.filter(block => block[3] !== -1).length;
+    
+    if (!forceLoadMore && actualMintCount >= MAX_MINTS_INITIAL_LOAD) {
+        console.log(`✅ Already loaded ${actualMintCount} mints (limit: ${MAX_MINTS_INITIAL_LOAD})`);
+        console.log('💡 Click "Load More Blocks" to continue scanning');
+        
+                    if (typeof renderMinerStatsFromMinedBlocks === 'function') {
+                renderMinerStatsFromMinedBlocks({
+                    mined_blocks,
+                    last_difficulty_start_block,
+                    estimated_network_hashrate,
+                    current_eth_block
+                });
+            }
+
+
+        // Show the load more button
+        const loadMoreBtn = document.getElementById('blocks-load-more-btn');
+        if (loadMoreBtn) {
+            loadMoreBtn.style.display = 'block';
+        }
+        
+        return;
+    }
+
+    /* =========================
+       SCAN RANGE (BACKWARDS)
+    ========================== */
+
+    const ETH_START_BLOCK = 35930446;
+    const scanEndBlock = Math.max(ETH_START_BLOCK, ETH_START_BLOCK);
+    const scanStartBlock = lastOldestScannedBlock;
+
+    if (scanStartBlock <= scanEndBlock) {
+        console.log('✅ No backward blocks left to scan');
+        
+
+
+
+        // Hide the load more button since we're done
+        const loadMoreBtn = document.getElementById('blocks-load-more-btn');
+        if (loadMoreBtn) {
+            loadMoreBtn.style.display = 'none';
+        }
+        
+        return;
+    }
+
+    const blocksToScan = scanStartBlock - scanEndBlock;
+    const iterations = Math.ceil(blocksToScan / 1000);
+
+    console.log(`⏪ Backward scanning ${blocksToScan} blocks in ${iterations} runs`);
+
+    /* =========================
+       CORE STATE
+    ========================== */
+
+    let run = 0;
+    let passedDifficultyPeriod = false;
+    let shouldStopDueToLimit = false;
+
+    while (run < iterations && !shouldStopDueToLimit) {
+        const toBlock = scanStartBlock - (run * 1000);
+        let fromBlock = toBlock - 999;
+
+        if (fromBlock < scanEndBlock) {
+            fromBlock = scanEndBlock;
+        }
+
+        // RPC must ALWAYS be forward
+        const queryFrom = fromBlock; // lower
+        const queryTo = toBlock;   // higher
+        console.log(`⏪ Run ${run + 1}: ${queryFrom} → ${queryTo}`);
+
+        const logs = await provider.getLogs({
+            fromBlock: queryFrom,
+            toBlock: queryTo,
+            address: ProofOfWorkAddresss,
+            topics: [_MINT_TOPIC],
+        });
+
+        // logs come oldest → newest
+        // reverse to process newest → oldest
+        logs.reverse();
+
+        for (let i = 0; i < logs.length; i++) {
+            const tx = logs[i];
+            const block_number = tx.blockNumber;
+            const tx_hash = tx.transactionHash;
+            const miner_address = getMinerAddressFromTopic(tx.topics[1]);
+            const data = tx.data;
+
+            const dataAmt = parseInt(data.substring(2, 66), 16) / 1e18;
+            const epochCount = parseInt(data.substring(66, 130), 16);
+
+            let epochsMined;
+            if (previousEpochCount === null) {
+                epochsMined = epochCount;
+            } else {
+                epochsMined = previousEpochCount - epochCount;
+            }
+
+            if (epochsMined < 0) epochsMined = 1;
+
+            previousEpochCount = epochCount;
+
+            /* === CHALLENGE CHANGE === */
+            const challenger = data.substring(130, 194);
+            if (previousChallenge !== challenger) {
+                previousChallenge = challenger;
+                mined_blocks.push([
+                    block_number,
+                    tx_hash,
+                    miner_address,
+                    -1,
+                    epochCount
+                ]);
+            }
+
+            mined_blocks.push([
+                block_number,
+                tx_hash,
+                miner_address,
+                dataAmt,
+                epochCount
+            ]);
+
+            /* === CHECK MINT LIMIT === */
+            if (!forceLoadMore) {
+                const currentMintCount = mined_blocks.filter(block => block[3] !== -1).length;
+                if (currentMintCount >= MAX_MINTS_INITIAL_LOAD) {
+                    console.log(`🛑 Reached ${MAX_MINTS_INITIAL_LOAD} mints limit`);
+                    shouldStopDueToLimit = true;
+                    break;
+                }
+            }
+
+            /* === DIFFICULTY PERIOD MARKER === */
+            if (!passedDifficultyPeriod && block_number < (window.cachedContractStats?.latestDiffPeriod || 0)) {
+                console.log("🔔 CROSSED DIFFICULTY PERIOD");
+                passedDifficultyPeriod = true;
+            }
+        }
+
+        /* =========================
+           PERIODIC UI + SAVE
+        ========================== */
+
+        if (run % 20 === 18 || passedDifficultyPeriod || shouldStopDueToLimit) {
+            console.log('💾 Saving backward progress');
+
+            localStorage.setItem(
+                'mintData_EraBitcoin2_afbRAFFABC_B0x1',
+                JSON.stringify(mined_blocks)
+            );
+            localStorage.setItem(
+                'mintData_GreekWedding2_B0x1',
+                JSON.stringify(previousChallenge)
+            );
+            localStorage.setItem(
+                LAST_OLDEST_BLOCK_KEY,
+                fromBlock.toString()
+            );
+
+            // trigger partial UI refresh
+            const rowBlocks = document.querySelector('#row-blocks');
+            const minerStats = document.querySelector('#minerstats');
+            
+            if (rowBlocks) rowBlocks.style.display = 'block';
+            if (minerStats) minerStats.style.display = 'block';
+            
+            if (typeof renderMinerStatsFromMinedBlocks === 'function') {
+                renderMinerStatsFromMinedBlocks({
+                    mined_blocks,
+                    last_difficulty_start_block,
+                    estimated_network_hashrate,
+                    current_eth_block
+                });
+            }
+        }
+
+        run++;
+        await sleep(200);
+    }
+
+    /* =========================
+       FINAL SAVE
+    ========================== */
+
+    localStorage.setItem(
+        'mintData_EraBitcoin2_afbRAFFABC_B0x1',
+        JSON.stringify(mined_blocks)
+    );
+    localStorage.setItem(
+        'mintData_GreekWedding2_B0x1',
+        JSON.stringify(previousChallenge)
+    );
+    localStorage.setItem(
+        LAST_OLDEST_BLOCK_KEY,
+        fromBlock.toString()
+    );
+
+    if (typeof renderMinerStatsFromMinedBlocks === 'function') {
+        renderMinerStatsFromMinedBlocks({
+            mined_blocks,
+            last_difficulty_start_block,
+            estimated_network_hashrate,
+            current_eth_block
+        });
+    }
+
+    // Show/hide load more button based on completion
+    const loadMoreBtn = document.getElementById('blocks-load-more-btn');
+    if (loadMoreBtn) {
+        if (shouldStopDueToLimit && scanStartBlock > scanEndBlock) {
+            loadMoreBtn.style.display = 'block';
+            console.log('💡 Click "Load More Blocks" to continue scanning');
+        } else {
+            loadMoreBtn.style.display = 'none';
+        }
+    }
+
+    console.log('✅ Backward scan complete');
 }
 
 
 
 
+/**
+ * Get relative time from block number (e.g., "2 hours ago")
+ * @param {number} blockNumber - The block number
+ * @param {number} currentBlock - Optional current block number
+ * @returns {string} Relative time string
+ */
+function get_relative_time_from_eth_block(blockNumber, currentBlock = null) {
+    const current = currentBlock || 
+                    (typeof window !== 'undefined' && window.cachedContractStats?.blockNumber) || 
+                    blockNumber;
+   // console.log("Current block number: ", current, " vs input blockNumber: ",blockNumber);
+    
+    const blockDiff = current - blockNumber;
+    const secondsDiff = blockDiff * 2;
+
+    //const now = new Date();
+    const diffMs = secondsDiff*1000;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHr = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHr / 24);
+    const diffYr = Math.floor(diffDay / 365);
+
+    let result;
+    if (diffYr >= 1) {
+        result = diffYr === 1 ? "1 year ago" : `${diffYr} years ago`;
+    } else if (diffDay >= 1) {
+        result = diffDay === 1 ? "1 day ago" : `${diffDay} days ago`;
+    } else if (diffHr >= 1) {
+        result = diffHr === 1 ? "1 hr ago" : `${diffHr} hrs ago`;
+    } else if (diffMin >= 1) {
+        result = diffMin === 1 ? "1 min ago" : `${diffMin} mins ago`;
+    } else {
+        result = "just now";
+    }
+
+    return result;
 
 
-
-
+}
 
 
 
