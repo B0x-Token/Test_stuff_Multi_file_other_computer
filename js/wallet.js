@@ -749,7 +749,7 @@ export function handleWalletError(error) {
 export function disconnectWallet() {
     walletConnected = false;
     userAddress = null;
-window.positionsLoaded = true;
+window.positionsLoaded = false;
     localStorage.removeItem('walletConnected');
     localStorage.removeItem('walletAddress');
 
