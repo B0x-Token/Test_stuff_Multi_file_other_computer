@@ -510,7 +510,7 @@ export async function connectWallet(resumeFromStep = null) {
             try {
                 
                     console.log("SwitchTab position Loaded2");
-                await withNetworkRetry(() => window.getTokenIDsOwnedByMetamask(), 2, 'getTokenIDs');
+                await withNetworkRetry(() => window.getTokenIDsOwnedByMetamask(true), 2, 'getTokenIDs');
                 window.positionsLoaded = true;
             } catch (e) {
                 console.warn('getTokenIDs error:', e);
