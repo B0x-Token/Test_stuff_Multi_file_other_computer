@@ -417,6 +417,11 @@ export async function connectWallet(resumeFromStep = null) {
 
         // Reset position search if switching accounts
         if (previousAct != userAddress) {
+            
+        // Reset position data first (quick, no RPC)
+        if (window.resetPositionData) {
+            window.resetPositionData();
+        }
             if (window.resetPositionSearch) {
                 window.resetPositionSearch();
             }
@@ -433,10 +438,6 @@ export async function connectWallet(resumeFromStep = null) {
         setupWalletListeners();
         await switchToBase();
 
-        // Reset position data first (quick, no RPC)
-        if (window.resetPositionData) {
-            window.resetPositionData();
-        }
 
         // PARALLEL GROUP 1: Fetch balances from both chains simultaneously
         console.log("Fetching balances in parallel...");
@@ -904,14 +905,6 @@ export async function setupWalletListeners() {
                 window.setIsInitialPositionLoad(false);
             }
 
-            // Load positions into UI
-            if (window.loadPositionsIntoDappSelections) {
-                try {
-                   // await window.loadPositionsIntoDappSelections();
-                } catch (e) {
-                    console.warn('Failed to load positions on account change:', e);
-                }
-            }
 
             // Update staking stats
             if (window.updateStakingStats) {

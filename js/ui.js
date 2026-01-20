@@ -571,10 +571,6 @@ export async function switchTab(tabName) {
             if (typeof window.getRewardStats === 'function') {
                 await window.getRewardStats();
             }
-            // Wait for preloaded positions if needed
-            if (window.positionsLoadPromise) {
-                await window.positionsLoadPromise;
-            }
         }
         if (typeof window.updateStakingStats === 'function') {
             window.updateStakingStats();
@@ -602,10 +598,7 @@ export async function switchTab(tabName) {
                     );
                 }
             }
-            // Wait for preloaded positions
-            if (window.positionsLoadPromise) {
-                await window.positionsLoadPromise;
-            }
+
             // Update the position info displays
             if (tabName === 'stake-increase' && typeof window.updateStakePositionInfo === 'function') {
                 window.updateStakePositionInfo();
@@ -616,14 +609,9 @@ export async function switchTab(tabName) {
         }
     } else if (tabName === 'liquidity-positions') {
         // Wait for preloaded positions
-        if (window.walletConnected && window.positionsLoadPromise) {
-            await window.positionsLoadPromise;
-        }
     } else if (tabName === 'create' || tabName === 'increase' || tabName === 'decrease') {
         // Wait for preloaded positions
-        if (window.walletConnected && window.positionsLoadPromise) {
-            await window.positionsLoadPromise;
-        }
+        
     } else if (tabName === 'side-pools') {
         // Load pool fees data
         if (typeof window.getAllFees === 'function') {
@@ -672,12 +660,6 @@ export async function switchTab(tabName) {
                     } catch (e) {
                         console.warn('Failed to load wallet balances:', e);
                     }
-                }
-            }
-            // Wait for preloaded positions for increase/decrease liquidity
-            if (tabName === 'increase-liquidity' || tabName === 'decrease-liquidity') {
-                if (window.positionsLoadPromise) {
-                    await window.positionsLoadPromise;
                 }
             }
         }

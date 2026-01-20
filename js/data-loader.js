@@ -1852,7 +1852,6 @@ export async function runContinuous(blocksPerScan = 1000, sleepSeconds = 10) {
     }
 
     isRunning = true;
-    WeAreSearchingLogsRightNow = false;
     latestSearch = false;
 
     while (isRunning) {
