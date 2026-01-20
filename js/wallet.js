@@ -814,6 +814,9 @@ export async function setupWalletListeners() {
             disconnectWallet();
         } else {
             const olduserAddy = userAddress;
+            if(userAddress == accounts[0]){
+                return;
+            }
             userAddress = accounts[0];
             window.userAddress = userAddress;
 
