@@ -491,7 +491,18 @@ export async function switchTab(tabName) {
         }
 
                     // Preload position data in background for any tab (with cache check)
-            if (typeof window.getTokenIDsOwnedByMetamask === 'function') {
+            if(!window.positionsLoaded){
+                try {
+                    await window.getTokenIDsOwnedByMetamask(true);
+                    console.log("SwitchTabA position Loaded");
+                    window.positionsLoaded = true; 
+                
+                } catch (e) {
+                    console.warn('Failed to preload getTokenIDsOwnedByMetamask(true):', e);
+                    window.positionsLoaded = false; // Allow retry on failure
+                }
+
+            }else if(typeof window.getTokenIDsOwnedByMetamask === 'function') {
                 try {
                     await window.getTokenIDsOwnedByMetamask();
                     console.log("SwitchTabf position Loaded");
