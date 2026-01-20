@@ -491,10 +491,10 @@ export async function switchTab(tabName) {
         }
 
                     // Preload position data in background for any tab (with cache check)
-            if (!window.positionsLoaded && typeof window.getTokenIDsOwnedByMetamask === 'function') {
+            if (typeof window.getTokenIDsOwnedByMetamask === 'function') {
                 try {
                     await window.getTokenIDsOwnedByMetamask();
-                    console.log("SwitchTab position Loaded");
+                    console.log("SwitchTabf position Loaded");
                     window.positionsLoaded = true;
                 } catch (e) {
                     console.warn('Failed to preload positions:', e);
@@ -611,7 +611,7 @@ export async function switchTab(tabName) {
         // Wait for preloaded positions
     } else if (tabName === 'create' || tabName === 'increase' || tabName === 'decrease') {
         // Wait for preloaded positions
-        
+
     } else if (tabName === 'side-pools') {
         // Load pool fees data
         if (typeof window.getAllFees === 'function') {
