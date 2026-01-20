@@ -409,13 +409,6 @@ export async function connectWallet(resumeFromStep = null) {
         window.userAddress = userAddress;
         walletConnected = true;
 
-        // Reset position search if switching accounts
-        if (previousAct != userAddress) {
-            
-            if (window.resetPositionSearch) {
-                window.resetPositionSearch();
-            }
-        }
         previousAct = userAddress;
 
         localStorage.setItem('walletConnected', 'true');
@@ -523,14 +516,6 @@ export async function connectWallet(resumeFromStep = null) {
             window.setIsInitialPositionLoad(false);
         }
 
-        // Load positions into UI (needs token IDs)
-        if (window.loadPositionsIntoDappSelections) {
-            try {
-                await withNetworkRetry(() => window.loadPositionsIntoDappSelections(), 2, 'loadPositions');
-            } catch (e) {
-                console.warn('loadPositions error:', e);
-            }
-        }
 
         // Fetch ETH balances in background (non-blocking)
         if (window.fetchBalancesETH && userAddress) {
@@ -801,6 +786,7 @@ export function disconnectWallet() {
     walletConnected = false;
     userAddress = null;
 window.positionsLoaded = false;
+        isConnecting = false;
     localStorage.removeItem('walletConnected');
     localStorage.removeItem('walletAddress');
 
@@ -833,6 +819,7 @@ export async function setupWalletListeners() {
     // Handle account changes
     window.ethereum.on('accountsChanged', async (accounts) => {
         console.log('Account changed event:', accounts);
+            window.positionsLoaded = false;
         if (accounts.length === 0) {
             disconnectWallet();
         } else {
@@ -840,6 +827,7 @@ export async function setupWalletListeners() {
             if(userAddress == accounts[0]){
                 return;
             }
+            
             userAddress = accounts[0];
             window.userAddress = userAddress;
 
@@ -914,14 +902,25 @@ export async function setupWalletListeners() {
             }
 
             // Get token IDs owned by new account (force refresh)
-            if (window.getTokenIDsOwnedByMetamask) {
+            if (window.getTokenIDsOwnedByMetamask && !window.positionsLoaded && !isConnecting) {
                 try {
+                    console.log("Call to getTokenIDsOwnedByMetamask(true)  from wallet.js setupWalletListener")
                     await window.getTokenIDsOwnedByMetamask(true); // Force refresh for new account
+                    window.positionsLoaded = true;
+                } catch (e) {
+                    console.warn('Failed to get token IDs on account change: getTokenIDsOwnedByMetamask(true): ', e);
+                    window.positionsLoaded = false;
+                }
+            }else if(window.getTokenIDsOwnedByMetamask) {
+                try {
+                    console.log("Call to getTokenIDsOwnedByMetamask()  from wallet.js setupWalletListener")
+                    await window.getTokenIDsOwnedByMetamask(); // Force refresh for new account
+                   // window.positionsLoaded = true;
                 } catch (e) {
                     console.warn('Failed to get token IDs on account change:', e);
+                    window.positionsLoaded = false;
                 }
             }
-
             // Clear initial load flag BEFORE loading positions into UI
             if (window.setIsInitialPositionLoad) {
                 window.setIsInitialPositionLoad(false);

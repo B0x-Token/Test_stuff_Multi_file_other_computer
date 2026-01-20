@@ -505,15 +505,15 @@ export async function getTokenIDsOwnedByMetamask(forceRefresh = false) {
     const now = Date.now();
     const sameAddress = lastPositionFetchAddress === window.userAddress;
     const cacheValid = (now - lastPositionFetchTime) < POSITION_CACHE_DURATION;
-
+    console.log("Call to getTokenIDsOwnedByMetamask");
     // Skip if cache is valid and same address (unless forced)
     if (!forceRefresh && sameAddress && cacheValid && Object.keys(positionData).length >= 0) {
-        console.log("Using cached position data (last fetch:", Math.round((now - lastPositionFetchTime) / 1000), "seconds ago)");+
-        await loadPositionsIntoDappSelections();
+        console.log("Using cached position data (last fetch:", Math.round((now - lastPositionFetchTime) / 1000), "seconds ago)");
+        //await loadPositionsIntoDappSelections();
         return;
     }
 
-    console.log("Fetching fresh position data...");
+    console.log("Call to getTokenIDsOwnedByMetamask 11 Fetching fresh position data...");
     lastPositionFetchTime = now;
     lastPositionFetchAddress = window.userAddress;
 
