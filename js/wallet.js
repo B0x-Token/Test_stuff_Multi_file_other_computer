@@ -418,10 +418,6 @@ export async function connectWallet(resumeFromStep = null) {
         // Reset position search if switching accounts
         if (previousAct != userAddress) {
             
-        // Reset position data first (quick, no RPC)
-        if (window.resetPositionData) {
-            window.resetPositionData();
-        }
             if (window.resetPositionSearch) {
                 window.resetPositionSearch();
             }
@@ -564,6 +560,39 @@ export async function connectWallet(resumeFromStep = null) {
         connectionState.isRecovering = false;
         connectionState.lastStep = 'completed';
 
+        
+            // Update all position info displays for the new account
+            if (window.updatePositionInfo) {
+                window.updatePositionInfo();
+            }
+            if (window.updateStakingDepositPositionInfo) {
+                window.updateStakingDepositPositionInfo();
+            }
+            if (window.updatePositionInfoMAIN_UNSTAKING) {
+                window.updatePositionInfoMAIN_UNSTAKING();
+            }
+            if (window.updateStakePositionInfo) {
+                window.updateStakePositionInfo();
+            }
+            if (window.updatePositionInfoStaking) {
+                window.updatePositionInfoStaking();
+            }
+            if (window.updatePositionInfoUnstaking) {
+                window.updatePositionInfoUnstaking();
+            }
+            if (window.updatePositionInfoIncreaseStaking) {
+                window.updatePositionInfoIncreaseStaking();
+            }
+            if (window.updatePositionInfoDecreaseStaking) {
+                window.updatePositionInfoDecreaseStaking();
+            }
+            if (window.updatePositionInfoIncrease) {
+                window.updatePositionInfoIncrease();
+            }
+            if (window.updatePositionInfoDecrease) {
+                window.updatePositionInfoDecrease();
+            }
+            
         // Release connection lock on success
         isConnecting = false;
         attemptf2f21 = 0;
@@ -838,10 +867,6 @@ export async function setupWalletListeners() {
                 await window.connect2();
             }
 
-            // Reset position data for new account
-            if (window.resetPositionData) {
-                window.resetPositionData();
-            }
             if (window.resetPositionSearch) {
                 window.resetPositionSearch();
             }
