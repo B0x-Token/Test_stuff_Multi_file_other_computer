@@ -406,6 +406,7 @@ export async function connectWallet(resumeFromStep = null) {
 
         attemptf2f21 = 0;
         userAddress = accounts[0];
+        window.userAddress = userAddress;
         walletConnected = true;
 
         // Reset position search if switching accounts

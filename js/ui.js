@@ -482,6 +482,41 @@ export async function switchTab(tabName) {
 
     var name = '#' + tabName;
     getNotificationWidget().positionInContainer(name);
+
+
+    // Hide all pages
+    const pages = document.querySelectorAll('.page');
+    pages.forEach(page => {
+        page.classList.remove('active');
+        page.style.display = '';
+    });
+
+    // Remove active class from all tabs
+    const tabs = document.querySelectorAll('.nav-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+
+    // Show selected page
+    const selectedPage = document.getElementById(tabName);
+    const selectedTab = document.querySelector(`[data-tab="${tabName}"]`);
+
+    if (selectedTab) selectedTab.classList.add('active');
+    if (selectedPage) {
+        selectedPage.classList.add('active');
+    }
+    
+    if (tabName == 'stats') {
+
+        // Always ensure stats-home is visible when switching to stats tab
+        switchTab2('stats-home');
+
+    }
+        
+
+    console.log("Switched to tab:", tabName);
+    updateURL(tabName);
+
+
+
     if (!window.walletConnected) {
         console.log("Wallet not connected");
     }else{
@@ -515,29 +550,6 @@ export async function switchTab(tabName) {
                     
     }
 
-    // Hide all pages
-    const pages = document.querySelectorAll('.page');
-    pages.forEach(page => {
-        page.classList.remove('active');
-        page.style.display = '';
-    });
-
-    // Remove active class from all tabs
-    const tabs = document.querySelectorAll('.nav-tab');
-    tabs.forEach(tab => tab.classList.remove('active'));
-
-    // Show selected page
-    const selectedPage = document.getElementById(tabName);
-    const selectedTab = document.querySelector(`[data-tab="${tabName}"]`);
-
-    if (selectedTab) selectedTab.classList.add('active');
-    if (selectedPage) {
-        selectedPage.classList.add('active');
-    }
-
-    console.log("Switched to tab:", tabName);
-    updateURL(tabName);
-
     if (tabName == "staking") {
         tabName = "staking-main-page";
     }
@@ -549,8 +561,6 @@ export async function switchTab(tabName) {
     }
     // Tab-specific data loading
     if (tabName == 'stats') {
-        // Always ensure stats-home is visible when switching to stats tab
-        switchTab2('stats-home');
 
         // Only load data if coming from a different tab or 3 minutes have passed
         const statsStale = (Date.now() - statsDataLoadedAt) > 180000; // 3 minutes
