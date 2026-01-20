@@ -63,28 +63,22 @@ let isConnecting = false;
 
 
 
-
 /**
- * Wait for wallet to be injected AND ready
- * @param {number} maxWaitMs - Maximum time to wait
- * @returns {Promise<boolean>} True if wallet is ready
+ * Wait for wallet provider to be injected AND responsive
+ * @param {number} maxWaitMs - Maximum time to wait for provider
+ * @returns {Promise<boolean>} True if provider is ready
  */
 async function waitForWalletReady(maxWaitMs = 5000) {
     const startTime = Date.now();
-    let walletDetected = false;
 
     // Listen for ethereum#initialized event (Rabby mobile)
     const initPromise = new Promise((resolve) => {
         if (window.ethereum) {
-            walletDetected = true;
             resolve(true);
             return;
         }
         
-        const handler = () => {
-            walletDetected = true;
-            resolve(true);
-        };
+        const handler = () => resolve(true);
         window.addEventListener('ethereum#initialized', handler, { once: true });
         
         setTimeout(() => {
@@ -96,18 +90,18 @@ async function waitForWalletReady(maxWaitMs = 5000) {
     // Poll for wallet injection (fallback)
     const pollPromise = (async () => {
         while (Date.now() - startTime < maxWaitMs) {
-            if (window.ethereum && !walletDetected) {
-                walletDetected = true;
-                
-                // Verify wallet responds
+            if (window.ethereum) {
+                // Verify wallet provider responds (not user approval)
                 try {
                     await Promise.race([
                         window.ethereum.request({ method: 'eth_chainId' }),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 500))
+                        new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error('timeout')), 500)
+                        )
                     ]);
                     return true;
                 } catch (e) {
-                    // Not ready yet, continue polling
+                    // Provider not ready yet, continue polling
                 }
             }
             await new Promise(r => setTimeout(r, 200));
@@ -115,10 +109,8 @@ async function waitForWalletReady(maxWaitMs = 5000) {
         return false;
     })();
 
-    // Return true if either method succeeds
     return Promise.race([initPromise, pollPromise]);
 }
-
 // ============================================================================
 // WALLET STATE SETTERS
 // ============================================================================
@@ -395,14 +387,15 @@ export async function connectWallet(resumeFromStep = null) {
 
     // Wait for wallet extension to be fully ready (handles fresh Chrome instances)
     console.log('Waiting for wallet to be ready...');
-    const walletReady = await waitForWalletReady(5000);
-    if (!walletReady) {
-        // Wallet not responding - auto-refresh since that fixes it
-        console.log('Wallet not ready - refreshing page...');
-        isConnecting = false;
-        setTimeout(() => window.location.reload(), 500);
-        return null;
+    const isReady = await waitForWalletReady();
+    
+
+    if (!isReady) {
+        alert('Wallet not detected. Please install a Web3 wallet.');
+        return;
     }
+
+
     console.log('Wallet is ready');
 
     try {
@@ -592,7 +585,7 @@ export async function connectWallet(resumeFromStep = null) {
             if (window.updatePositionInfoDecrease) {
                 window.updatePositionInfoDecrease();
             }
-            
+
         // Release connection lock on success
         isConnecting = false;
         attemptf2f21 = 0;
