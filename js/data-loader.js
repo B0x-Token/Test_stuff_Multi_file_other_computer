@@ -1933,6 +1933,8 @@ export async function runContinuous(blocksPerScan = 1000, sleepSeconds = 10) {
                 console.log(`✓ Caught up to block ${latestBlock}`);
                 WeAreSearchingLogsRightNow = false;
             } else {
+                
+                        await finishBlocksRun();
                 WeAreSearchingLogsRightNow = false;
                 console.log(`Up to date at block ${latestBlock}`);
             }
@@ -1963,6 +1965,7 @@ export async function runContinuous(blocksPerScan = 1000, sleepSeconds = 10) {
         }
     }
 
+                WeAreSearchingLogsRightNow = false;
     console.log("Monitor stopped.");
     if (typeof hideLoadingWidget === 'function') {
         hideLoadingWidget();
